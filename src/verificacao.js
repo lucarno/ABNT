@@ -18,7 +18,7 @@ export const STATUS = {
 
 const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-async function obterJson(fetchFn, url, tentativas = 4) {
+async function obterJson(fetchFn, url, tentativas = 5) {
   for (let k = 0; ; k++) {
     const r = await fetchFn(url, { headers: { Accept: 'application/json' } });
     if (r.status === 404) return null;
@@ -139,7 +139,7 @@ const resultado = (status, extra = {}) => ({ status, rotulo: STATUS[status], enc
 
 function descrever(c) {
   if (c.status === 'verificada') return c.notas[0] || `Localizada na ${c.cand.base}.`;
-  return `Registro parecido na ${c.cand.base}, mas ${c.notas.join('; ')}.`;
+  return `Na ${c.cand.base}, ${c.notas.join('; ')}.`;
 }
 
 async function buscaBibliografica(ref, fetchFn) {
