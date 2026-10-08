@@ -1,0 +1,186 @@
+// Lista de referências, citações no texto e o cruzamento entre as duas (sistema autor-data).
+import { normalizar } from './texto.js';
+
+const ANO = /\b(1[5-9]\d{2}|20\d{2})[a-z]?\b/g;
+const TEM_ANO = /\b(1[5-9]\d{2}|20\d{2})[a-z]?\b/;
+
+function anos(texto) {
+  return [...new Set([...texto.matchAll(ANO)].map((m) => Number(m[1])))];
+}
+
+// Fim do bloco de autoria: primeiro ". " que não seja de uma inicial ("J. P."), de "et al."
+// ou seguido de "(org.)"/"(ed.)".
+function fimAutoria(texto) {
+  const re = /\.\s+/g;
+  let m;
+  while ((m = re.exec(texto))) {
+    const antes = texto.slice(0, m.index).match(/(\S+)$/)?.[1] || '';
+    const depois = texto.slice(m.index + m[0].length);
+    if (/^[\p{Lu}](-[\p{Lu}])?$/u.test(antes) && /^(\p{Lu}\.|\()/u.test(depois)) continue;
+    if (/^al$/i.test(antes)) continue;
+    if (/^\(/.test(depois) && /^\([^)]{1,12}\)\./.test(depois)) continue;
+    return m.index + 1;
+  }
+  return -1;
+}
+
+export function analisarReferencia(texto, anterior) {
+  const repetido = /^_{3,}/.test(texto);
+  const corte = fimAutoria(texto);
+  const bloco = corte > 0 ? texto.slice(0, corte - 1) : texto;
+  // Entrada pelo título ("A HISTÓRIA da arte. ..."): bloco sem vírgula e com minúsculas.
+  const entradaPorTitulo = !repetido && !bloco.includes(',') && /\p{Ll}{2,}/u.test(bloco);
+
+  let autor;
+  if (repetido) autor = anterior?.autor || '';
+  else autor = texto.split(/,|\.\s/)[0].trim();
+
+  let titulo;
+  if (entradaPorTitulo) titulo = bloco;
+  else if (corte > 0) titulo = texto.slice(corte).trim().split(/\.\s|\?\s/)[0];
+  titulo = (titulo || '').replace(/\s+In:.*$/, '').trim();
+
+  const doiM = texto.match(/\b(10\.\d{4,9}\/[^\s"<>]+)/i);
+  const doi = doiM ? doiM[1].replace(/[.,;)\]>]+$/, '') : null;
+  const urls = [...texto.matchAll(/https?:\/\/[^\s<>]+/g)]
+    .map((m) => m[0].replace(/[.,;)\]>]+$/, ''))
+    .filter((u) => !/doi\.org\//i.test(u));
+
+  let tipo = 'outro';
+  if (/\bNBR\s*\d|ASSOCIA[ÇC][ÃA]O BRASILEIRA DE NORMAS/i.test(texto)) tipo = 'norma';
+  else if (/\b(Lei|Decreto|Medida Provis[óo]ria|Constitui[çc][ãa]o|Resolu[çc][ãa]o|Portaria|Instru[çc][ãa]o Normativa|Emenda Constitucional|S[úu]mula)\b/.test(texto.slice(0, 200)) && /^[\p{Lu}\s.()]+$/u.test(autor)) tipo = 'legislacao';
+  else if (/\bIn:\s/.test(texto)) tipo = 'capitulo';
+  else if (/\b(Tese|Disserta[çc][ãa]o|Trabalho de Conclus[ãa]o|Monografia)\b/i.test(texto)) tipo = 'academico';
+  else if (/\bv\.\s*\d|\bn\.\s*\d/.test(texto)) tipo = 'artigo';
+  else if (/:\s*[^,:]+,\s*\[?\d{4}/.test(texto)) tipo = 'livro';
+
+  return {
+    texto,
+    autor,
+    autorTokens: normalizar(autor).split(' ').filter(Boolean),
+    institucional: !repetido && !texto.split('.')[0].includes(','),
+    titulo,
+    anos: anos(texto),
+    doi,
+    urls,
+    tipo,
+  };
+}
+
+const INICIO_REF = /^(_{3,}|[\p{Lu}][\p{Lu}'’\-]+(\s+[\p{Lu}'’\-]+)*\s*[,.])/u;
+
+// Divide as linhas de um PDF em referências: linha em branco (salto vertical) entre
+// referências ou, na falta dela, linha que começa com SOBRENOME após linha terminada em ponto.
+export function agruparLinhasPdf(linhas) {
+  if (!linhas.length) return [];
+  const passos = [];
+  for (let k = 1; k < linhas.length; k++) {
+    const a = linhas[k - 1];
+    const b = linhas[k];
+    if (a.pagina === b.pagina) passos.push(b.topo - a.topo);
+  }
+  passos.sort((x, y) => x - y);
+  const base = passos.length ? passos[Math.floor(passos.length * 0.25)] : 0;
+
+  const refs = [];
+  let atual = [];
+  linhas.forEach((l, k) => {
+    const ant = linhas[k - 1];
+    const salto = ant && ant.pagina === l.pagina && base > 0 && l.topo - ant.topo > base * 1.5;
+    const pareceInicio = ant && INICIO_REF.test(l.texto) && /\.\s*$/.test(ant.texto);
+    if (atual.length && (salto || pareceInicio)) {
+      refs.push(atual);
+      atual = [];
+    }
+    atual.push(l);
+  });
+  if (atual.length) refs.push(atual);
+  return refs.map((g) => g.map((l) => l.texto).join(' ').replace(/(\w)- (\w)/g, '$1$2'));
+}
+
+export function extrairReferencias(paragrafosDaSecao, tipoDoc) {
+  const textos = tipoDoc === 'pdf'
+    ? agruparLinhasPdf(paragrafosDaSecao)
+    : paragrafosDaSecao.map((p) => p.texto).filter((t) => t.length > 0);
+  const refs = [];
+  for (const t of textos) refs.push({ n: refs.length + 1, ...analisarReferencia(t, refs[refs.length - 1]) });
+  return refs;
+}
+
+// ---------- Citações ----------
+
+const NAO_AUTOR = new Set(['lei', 'art', 'arts', 'decreto', 'figura', 'tabela', 'grafico', 'quadro', 'anexo', 'apendice',
+  'secao', 'capitulo', 'em', 'no', 'na', 'de', 'ate', 'desde', 'entre', 'ver', 'cf', 'p', 'fonte', 'nota', 'ano', 'censo']);
+
+function autorValido(autor) {
+  const a = autor.trim();
+  if (!/^[\p{Lu}]/u.test(a) || a.split(/\s+/).length > 8) return false;
+  return !NAO_AUTOR.has(normalizar(a).split(' ')[0]);
+}
+
+// "(SILVA, 2020, p. 3)", "(Silva; Souza, 2019)", "(SILVA, 2019, 2020; LIMA, 2021)", "(Simon, 1960 citado por Lima, 2010)"
+function citacoesParenteticas(texto) {
+  const out = [];
+  for (const m of texto.matchAll(/\(([^()]{2,400})\)/g)) {
+    const dentro = m[1];
+    if (!TEM_ANO.test(dentro)) continue;
+    let pendente = null;
+    for (let parte of dentro.split(';')) {
+      parte = parte.split(/\s+(?:apud|citado por)\s+/i).pop();
+      const primeiroAno = parte.search(TEM_ANO);
+      if (primeiroAno < 0) {
+        if (!pendente && /[\p{L}]/u.test(parte)) pendente = parte.trim();
+        continue;
+      }
+      let autor = parte.slice(0, primeiroAno).replace(/[,\s]+$/, '').trim();
+      if (pendente) autor = pendente;
+      pendente = null;
+      autor = autor.replace(/\s+et\s+al\.?$/i, '').trim();
+      if (!autor || !autorValido(autor)) continue;
+      for (const a of anos(parte.slice(primeiroAno))) out.push({ autor, ano: a, trecho: m[0] });
+    }
+  }
+  return out;
+}
+
+// "Silva (2020)", "Silva e Souza (2019, p. 4)", "Silva et al. (2020)"
+const NOME = "[\\p{Lu}][\\p{L}'’\\-]+";
+const NARRATIVA = new RegExp(`((?:${NOME}[ ,]+(?:e +|and +|& +)?){0,3}${NOME})(?: +et +al\\.?)? *\\(((?:1[5-9]|20)\\d{2})[a-z]?(?:[,;][^)]*)?\\)`, 'gu');
+
+function citacoesNarrativas(texto) {
+  const out = [];
+  for (const m of texto.matchAll(NARRATIVA)) {
+    // Remove título em caixa alta colado à frase ("INTRODUÇÃO Segundo Silva").
+    const autor = m[1].replace(/[ ,]+$/, '').replace(/^(?:[\p{Lu}]{2,} +)+(?=\p{Lu}\p{Ll})/u, '');
+    if (autorValido(autor.split(/[ ,]+/).pop())) out.push({ autor, ano: Number(m[2]), trecho: m[0] });
+  }
+  return out;
+}
+
+export function extrairCitacoes(texto) {
+  return [...citacoesParenteticas(texto), ...citacoesNarrativas(texto)];
+}
+
+function casa(citacao, ref) {
+  if (!ref.anos.includes(citacao.ano)) return false;
+  const toks = normalizar(citacao.autor).split(' ').filter((t) => t.length > 2 && !['et', 'al', 'and'].includes(t));
+  return toks.some((t) => ref.autorTokens.includes(t));
+}
+
+export function cruzar(citacoes, refs) {
+  const usadas = new Set();
+  const semReferencia = new Map();
+  for (const c of citacoes) {
+    const alvo = refs.filter((r) => casa(c, r));
+    if (alvo.length) alvo.forEach((r) => usadas.add(r.n));
+    else {
+      const chave = `${c.autor} (${c.ano})`;
+      if (!semReferencia.has(chave)) semReferencia.set(chave, c);
+    }
+  }
+  return {
+    semReferencia: [...semReferencia.values()],
+    naoCitadas: refs.filter((r) => !usadas.has(r.n)),
+    citadas: usadas,
+  };
+}

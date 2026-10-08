@@ -25,15 +25,18 @@ function lerPPr(pPr) {
     before: num(attr(sp, 'before')),
     after: num(attr(sp, 'after')),
     left: num(attr(ind, 'left') ?? attr(ind, 'start')),
+    firstLine: num(attr(ind, 'firstLine') ?? (attr(ind, 'hanging') !== undefined ? -num(attr(ind, 'hanging')) : undefined)),
     jc: attr(filho(pPr, 'jc'), 'val'),
   };
 }
 
 function lerRPr(rPr) {
   const f = filho(rPr, 'rFonts');
+  const tema = attr(f, 'asciiTheme');
+  const nome = attr(f, 'ascii') ?? attr(f, 'hAnsi');
   return {
-    tema: attr(f, 'asciiTheme'),
-    fonte: attr(f, 'ascii') ?? attr(f, 'hAnsi'),
+    // Tema e nome explícito no mesmo nível: o tema prevalece, como no Word.
+    fonte: tema ? { tema } : nome ? { nome } : undefined,
     sz: num(attr(filho(rPr, 'sz'), 'val')),
   };
 }
@@ -91,8 +94,9 @@ function lerTema(xml) {
 }
 
 function resolverFonte(r, tema) {
-  if (r.tema) return r.tema.startsWith('major') ? tema.major : tema.minor;
-  return r.fonte;
+  if (!r.fonte) return undefined;
+  if (r.fonte.tema) return r.fonte.tema.startsWith('major') ? tema.major : tema.minor;
+  return r.fonte.nome;
 }
 
 function entrelinha(p, tamanho) {
@@ -166,6 +170,7 @@ function lerParagrafo(p, ctx) {
     tamanho,
     entrelinha: entrelinha(pp, tamanho),
     recuoEsqCm: (pp.left || 0) / TWIP_CM,
+    recuoPrimeiraCm: (pp.firstLine || 0) / TWIP_CM,
     alinhamento: ALINHAMENTO[pp.jc] || 'esquerda',
     espacoAntesPt: (pp.before || 0) / 20,
     espacoDepoisPt: (pp.after || 0) / 20,
@@ -209,10 +214,10 @@ function lerNumeracao(cabecalhos, rodapes, ctx) {
       const info = lerParagrafo(p, ctx);
       const temTab = p.getElementsByTagNameNS(W, 'tab').length > 0;
       const alinhamento = info.alinhamento === 'direita' ? 'direita' : temTab ? 'tabulacao' : info.alinhamento;
-      return { local, alinhamento };
+      return { local, alinhamento, tamanho: info.tamanho };
     }
   }
-  return { local: null, alinhamento: null };
+  return { local: null, alinhamento: null, tamanho: null };
 }
 
 export async function lerDocx(buffer, { JSZip = globalThis.JSZip, DOMParser = globalThis.DOMParser } = {}) {
@@ -228,9 +233,15 @@ export async function lerDocx(buffer, { JSZip = globalThis.JSZip, DOMParser = gl
   const ctx = { ...lerEstilos(await xml('word/styles.xml')), tema: lerTema(await xml('word/theme/theme1.xml')) };
   const corpo = doc.getElementsByTagNameNS(W, 'body')[0];
 
+  // Cada sectPr dentro de um parágrafo encerra uma seção; o do corpo encerra a última.
+  let secao = 0;
   const paragrafos = Array.from(corpo.getElementsByTagNameNS(W, 'p'))
     .filter((p) => !temAncestral(p, ['Fallback']))
-    .map((p, i) => ({ i, ...lerParagrafo(p, ctx) }));
+    .map((p, i) => {
+      const out = { i, secao, ...lerParagrafo(p, ctx) };
+      if (filho(filho(p, 'pPr'), 'sectPr')) secao++;
+      return out;
+    });
 
   const secoes = Array.from(doc.getElementsByTagNameNS(W, 'sectPr')).map(lerSecao);
 

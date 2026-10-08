@@ -3,6 +3,21 @@
 
 const PT_CM = 2.54 / 72;
 
+// Nome real da fonte (ex.: "TimesNewRomanPSMT"), sem o prefixo de subconjunto "ABCDEF+".
+async function nomesDasFontes(pagina, conteudo) {
+  const nomes = new Map();
+  try {
+    await pagina.getOperatorList();
+    for (const id of new Set(conteudo.items.map((it) => it.fontName))) {
+      const f = pagina.commonObjs.has(id) ? pagina.commonObjs.get(id) : null;
+      if (f && f.name) nomes.set(id, f.name.replace(/^[A-Z]{6}\+/, ''));
+    }
+  } catch {
+    // Sem nomes de fonte: a checagem de família é omitida.
+  }
+  return nomes;
+}
+
 export async function lerPdf(buffer, pdfjs) {
   const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false }).promise;
   const paginas = [];
@@ -14,6 +29,7 @@ export async function lerPdf(buffer, pdfjs) {
     const largura = x1 - x0;
     const altura = y1 - y0;
     const conteudo = await pagina.getTextContent();
+    const nomesFonte = await nomesDasFontes(pagina, conteudo);
 
     // Agrupa itens por linha de base (y), tolerando pequenas variações.
     const linhas = [];
@@ -23,7 +39,7 @@ export async function lerPdf(buffer, pdfjs) {
       const tam = Math.hypot(c, d);
       let linha = linhas.find((l) => Math.abs(l.y - y) < tam * 0.4);
       if (!linha) linhas.push((linha = { y, itens: [] }));
-      linha.itens.push({ x: x - x0, fim: x - x0 + it.width, tam, str: it.str, familia: conteudo.styles[it.fontName]?.fontFamily });
+      linha.itens.push({ x: x - x0, fim: x - x0 + it.width, tam, str: it.str, fonteNome: nomesFonte.get(it.fontName) });
     }
     linhas.sort((a, b) => b.y - a.y);
 
@@ -44,7 +60,7 @@ export async function lerPdf(buffer, pdfjs) {
         fim: Math.max(...l.itens.map((i) => i.fim)),
         topo: altura - (l.y - y0), // distância da borda superior até a linha de base
         tamanho: Math.round(maior.tam * 10) / 10,
-        familia: maior.familia,
+        fonteNome: maior.fonteNome,
       };
     });
 
