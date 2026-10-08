@@ -122,8 +122,17 @@ async function executar() {
     let revisao = new Map();
     let web = new Map();
     let falhaIa = '';
+    // Sem o SDK (rede bloqueando o CDN, por exemplo), as demais checagens seguem valendo.
+    let Anthropic = null;
     if (chave && analise.refs.length) {
-      const { default: Anthropic } = await import(CDN.anthropic);
+      try {
+        ({ default: Anthropic } = await import(CDN.anthropic));
+      } catch (err) {
+        falhaIa = `não foi possível carregar o cliente da Anthropic (${err.message})`;
+        etapa(`Revisão e busca com o Claude não realizadas: ${falhaIa}.`);
+      }
+    }
+    if (Anthropic) {
       const cliente = criarCliente(Anthropic, chave, { maxRetries: 4 });
       const pendentes = analise.refs.filter((r) => ['nao_localizada', 'erro'].includes(verif.get(r.n)?.status));
       const e1 = etapa('Claude revisando a forma das referências…');

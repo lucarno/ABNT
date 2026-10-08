@@ -31,8 +31,9 @@ Com o **.docx**, a formatação vem do próprio arquivo, já com a herança de e
 | Situação | Significado |
 |---|---|
 | Verificada / Encontrada na web | Há registro da obra com o mesmo título e autoria |
-| Divergências | Existe obra parecida, mas autoria, título ou ano não conferem |
-| DOI inexistente | O DOI informado não existe: forte indício de referência inventada |
+| Divergências | Existe obra com o mesmo título, mas de outra autoria (sinal típico de referência gerada por IA), com coautores diferentes ou com outro ano |
+| DOI incorreto | A obra existe, mas o DOI informado não existe ou é de outra obra; o DOI certo é indicado |
+| DOI inexistente | O DOI informado não existe e a obra não foi localizada: forte indício de referência inventada |
 | DOI de outra obra | O DOI existe, mas é de outro trabalho |
 | Não encontrada | Nem a Crossref nem a busca na web acharam a obra |
 | Não localizada | Fora da Crossref e sem busca na web (sem chave). **Não significa inventada** |
@@ -44,6 +45,8 @@ Cada aluno usa a própria chave da Anthropic (crie uma em <https://console.anthr
 
 - **para a Anthropic:** apenas a lista de referências, e só quando há chave;
 - **para a Crossref e a DataCite:** apenas o texto de cada referência.
+
+A página declara uma Content-Security-Policy que só permite conexões com a Crossref, a DataCite, a API da Anthropic e o CDN das bibliotecas, de modo que um script injetado não consegue enviar a chave para outro endereço.
 
 O modelo usado é o Claude Opus 5.5 (`claude-opus-5-5`, em `src/regras.js`). Ao final da análise, o app mostra os tokens e as buscas usados e uma estimativa de custo em dólares.
 
@@ -82,8 +85,13 @@ npm run test:e2e    # Chromium com a página real, CDN e Crossref reais, API da 
 
 Os TCCs de teste (`tests/fixtures/tcc_conforme.*` e `tcc_problemas.*`) são gerados por `python3 tests/fixtures/gerar.py`, que usa python-docx e LibreOffice. O conforme não deve gerar nenhum erro nem alerta. O com problemas tem 21 problemas plantados, inclusive uma referência com DOI inventado.
 
+## Auditoria com TCCs reais
+
+O verificador foi rodado em 17 TCCs de graduação publicados no repositório do Insper (Word, Google Docs, LaTeX/abnTeX2), com 330 referências, e em DOCX gerados por Word, pandoc e LibreOffice. Cada alerta foi conferido à mão; os falsos alarmes encontrados viraram correções e testes (`tests/*.test.mjs`). Nos trabalhos reais, os problemas mais comuns foram: citações sem referência correspondente (ou com ano diferente), numeração de páginas contando a capa, número de página em tamanho 11 ou 12, referências online sem data de acesso e referências fora de ordem alfabética. Em dois trabalhos apareceram referências com título real atribuído a outros autores ou com coautores trocados.
+
 ## Limitações
 
-- A detecção de citações usa padrões do sistema autor-data. Casos atípicos podem gerar um falso "sem referência", por isso a lista mostra autor e ano para conferência.
+- A detecção de citações usa padrões do sistema autor-data (e do numérico, quando a lista e o texto usam [n]). Citações fora do padrão ("(Silva 2020)", sem vírgula) não são reconhecidas; menções a nome e ano entre parênteses que não casam com nenhuma referência aparecem como "possíveis" citações, para conferência.
+- Em PDF, referências sem linha em branco entre si podem ser lidas juntas quando a anterior não termina em ponto.
 - Não são checados: títulos começando em nova página, sumário idêntico aos títulos do texto e cor da fonte.
 - A ferramenta é um apoio. A conferência final cabe ao aluno e ao orientador.

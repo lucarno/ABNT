@@ -76,3 +76,13 @@ test('pdf conforme, sem chave: nenhum problema e nenhuma chamada à API', { time
   assert.equal(pedidosApi.length, 0);
   assert.deepEqual(erros, []);
 });
+
+test('se o SDK da Anthropic não carregar, as demais checagens aparecem mesmo assim', { timeout: 180000 }, async (t) => {
+  const { pagina, erros } = await abrir(t);
+  await pagina.route('https://cdn.jsdelivr.net/npm/@anthropic-ai/**', (rota) => rota.abort());
+  await verificar(pagina, 'tcc_problemas.docx', 'sk-ant-teste');
+  assert.match(await pagina.textContent('#achados'), /Margens/);
+  assert.match(await pagina.textContent('#etapas'), /não realizadas/);
+  assert.equal(await pagina.$$eval('#referencias .ref', (els) => els.length), 4);
+  assert.deepEqual(erros, []);
+});
