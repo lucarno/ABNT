@@ -1,10 +1,14 @@
 // Utilidades de texto compartilhadas.
 
+// Letras sem decomposição em NFD ("ı" de Çakıroğlu, "ø", "ł"...).
+const ESPECIAIS = { ı: 'i', ø: 'o', ł: 'l', đ: 'd', ð: 'd', æ: 'ae', œ: 'oe', ß: 'ss', þ: 'th' };
+
 export function normalizar(s) {
   return (s || '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
+    .replace(/[ıøłđðæœßþ]/g, (c) => ESPECIAIS[c])
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();

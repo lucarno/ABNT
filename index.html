@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- A página só fala com as bases de referências, a API da Anthropic e o CDN das bibliotecas:
+       um script injetado não consegue enviar a chave do aluno para outro endereço. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://api.crossref.org https://api.datacite.org https://api.anthropic.com https://cdn.jsdelivr.net; img-src 'self' data:; base-uri 'none'; form-action 'none'">
   <title>Verificador de TCC</title>
   <meta name="description" content="Confere formatação ABNT, citações e a existência das referências de trabalhos acadêmicos.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,7 +21,7 @@
       <div class="quadrados" aria-hidden="true"><span></span><span></span></div>
       <p class="sobretitulo">Normas ABNT · Manual da Biblioteca Telles</p>
       <h1>Verificador de TCC</h1>
-      <p class="sub">Confere a formatação, cruza citações e referências e verifica se as referências existem. O arquivo é lido no seu navegador; ele não é enviado para nenhum servidor.</p>
+      <p class="sub">Confere a formatação, cruza citações e referências e verifica se as referências existem. O arquivo é lido no seu navegador e não é enviado para nenhum servidor; só o texto das referências é consultado em bases bibliográficas (Crossref e DataCite).</p>
     </header>
 
     <section>

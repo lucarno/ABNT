@@ -38,10 +38,13 @@ function deCrossref(it) {
   // Ano: a data mais antiga entre as registradas (publicação online costuma vir antes da impressa).
   const anos = ['issued', 'published', 'published-online', 'published-print']
     .map((k) => it[k]?.['date-parts']?.[0]?.[0]).filter((a) => Number.isInteger(a));
+  // DOIs de artigos no prelo trazem o ano da publicação online ("10.1016/j.x.2024.102").
+  const anoDoi = Number((it.DOI || '').match(/[./]((?:19|20)\d{2})\./)?.[1]);
   return {
     titulo: limpar([...(it.title || []), ...(it.subtitle || [])].join(': ')),
     sobrenomes: (it.author || []).map((a) => a.family || a.name || ''),
     ano: anos.length ? Math.min(...anos) : null,
+    anos: [...anos, ...(anoDoi ? [anoDoi] : [])],
     livro: /book|monograph/.test(it.type || ''),
     doi: it.DOI,
     url: `https://doi.org/${it.DOI}`,
@@ -87,9 +90,11 @@ function mesmoSobrenome(a, b) {
 
 export function comparar(ref, cand) {
   const tituloRef = ref.titulo || ref.texto;
-  // Título do registro contido no texto da referência (pega subtítulos que a heurística cortou).
+  const simTitulo = similaridadeTitulo(tituloRef, cand.titulo);
+  // Título do registro contido no texto da referência: recupera subtítulos que a heurística
+  // cortou, mas só vale junto com autoria confirmada (o texto também traz revista e instituição).
   const noTexto = tokens(cand.titulo).length >= 4 ? contido(cand.titulo, ref.texto) : 0;
-  const sim = Math.max(similaridadeTitulo(tituloRef, cand.titulo), noTexto);
+  const sim = Math.max(simTitulo, noTexto);
 
   const autores = autoresDaRef(ref);
   const doRegistro = cand.sobrenomes.map(normalizar).filter(Boolean);
@@ -97,7 +102,8 @@ export function comparar(ref, cand) {
   const autorOk = !autores.length || !doRegistro.length ? null : achados.some(Boolean);
   // Coautores: com dois ou mais autores dos dois lados, ao menos um coautor deve aparecer.
   const coautoresOk = autorOk && autores.length >= 2 && doRegistro.length >= 2 ? achados.slice(1).some(Boolean) || !achados[0] : null;
-  const anoOk = cand.ano && ref.anos.length ? ref.anos.some((a) => Math.abs(a - cand.ano) <= 1) : null;
+  const anosCand = cand.anos?.length ? cand.anos : cand.ano ? [cand.ano] : [];
+  const anoOk = anosCand.length && ref.anos.length ? ref.anos.some((a) => anosCand.some((b) => Math.abs(a - b) <= 1)) : null;
   const livro = cand.livro || ['livro', 'capitulo'].includes(ref.tipo);
   // Resenha publicada da obra: o título do registro contém o título e o autor da referência.
   const resenha = ref.titulo && contido(ref.titulo, cand.titulo) >= 0.9 && autores.some((a) => tokens(cand.titulo).some((t) => mesmoSobrenome(a, t)));
@@ -108,12 +114,12 @@ export function comparar(ref, cand) {
   if (sim >= 0.85 && autorOk === true && coautoresOk !== false && (anoOk !== false || livro)) {
     status = 'verificada';
     if (anoOk === false) notas.push(`Localizada na ${cand.base} em outra edição ou ano (${cand.ano}).`);
-  } else if (sim >= 0.95 && autorOk === null && anoOk !== false) {
+  } else if (simTitulo >= 0.95 && autorOk === null && anoOk !== false) {
     status = 'verificada';
   } else if (resenha && autorOk !== true) {
     status = 'verificada';
     notas.push(`Existência confirmada por resenha publicada da obra (${cand.base}).`);
-  } else if (sim >= 0.92 && autorOk === false) {
+  } else if (simTitulo >= 0.92 && autorOk === false) {
     status = 'divergente';
     notas.push(`existe obra com este título, mas de outra autoria (registro: ${registro})`);
   } else if (sim >= 0.85 && autorOk === true && coautoresOk === false) {

@@ -83,3 +83,22 @@ test('TCC com problemas (.pdf): aponta o que é mensurável em PDF', async () =>
   ]) assert.ok(p.includes(esperado), `faltou ${esperado}`);
   assert.equal(r.refs.length, 4);
 });
+
+// Recursos de documentos do Word: caixa de texto (gravada duas vezes no XML, em
+// mc:Choice e mc:Fallback) e alterações controladas (w:ins / w:del).
+test('docx: caixa de texto não duplica texto e alterações controladas valem como aceitas', async () => {
+  const zip = await JSZip.loadAsync(fixture('tcc_conforme.docx'));
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  let xml = await zip.file('word/document.xml').async('string');
+  const caixa = `<w:p><w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">`
+    + `<mc:Choice Requires="wps"><w:drawing><w:txbxContent><w:p><w:r><w:t>Texto da caixa</w:t></w:r></w:p></w:txbxContent></w:drawing></mc:Choice>`
+    + `<mc:Fallback><w:pict><w:txbxContent><w:p><w:r><w:t>Texto da caixa</w:t></w:r></w:p></w:txbxContent></w:pict></mc:Fallback>`
+    + `</mc:AlternateContent></w:r></w:p>`;
+  const revisao = `<w:p><w:r><w:t xml:space="preserve">Frase </w:t></w:r><w:del w:id="1" w:author="x"><w:r><w:delText>apagada </w:delText></w:r></w:del>`
+    + `<w:ins w:id="2" w:author="x"><w:r><w:t>inserida</w:t></w:r></w:ins></w:p>`;
+  xml = xml.replace(/<w:body>/, `<w:body ${W}>${caixa}${revisao}`);
+  zip.file('word/document.xml', xml);
+  const doc = await lerDocx(await zip.generateAsync({ type: 'uint8array' }), { JSZip, DOMParser });
+  assert.equal(doc.paragrafos.filter((p) => p.texto === 'Texto da caixa').length, 1);
+  assert.ok(doc.paragrafos.some((p) => p.texto === 'Frase inserida'));
+});

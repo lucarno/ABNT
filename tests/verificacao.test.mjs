@@ -119,3 +119,19 @@ test('casos reais: obras diferentes, autoria trocada, resenha, coautores e ediç
   assert.equal(status('CET – Companhia de Engenharia de Tráfego. Relatórios Anuais de Mobilidade. São Paulo, diversas edições.',
     cand('Estratégia e estrutura em empresas de mobilidade urbana: o caso da Companhia de Engenharia de Tráfego', ['Silva'], 2015)), null);
 });
+
+test('casos reais: letras especiais, verificação sem autor e ano de artigo no prelo', async () => {
+  const { comparar } = await import('../src/verificacao.js');
+  const cand = (titulo, sobrenomes, ano, extra = {}) => ({ titulo, sobrenomes, ano, livro: false, base: 'Crossref', ...extra });
+  // "Çakıroğlu" (ı sem pingo) e "ÇAKIROĞLU" são o mesmo sobrenome.
+  assert.equal(comparar(ref('ERASLAN, Ali; ÇAKIROĞLU, Temel. Examination of sporting successes of European football clubs. Journal X, v. 1, 2024.'),
+    cand('Examination of Sporting Successes of European Football Clubs', ['Eraslan', 'Çakıroğlu'], 2024)).status, 'verificada');
+  // Registro sem autores cujo título só aparece espalhado no texto (revista, instituição): não verifica.
+  assert.equal(comparar(ref('ANDRADE, S.; CRESCENTINI, F. Return dispersion in emerging private equity funds. Emerging Markets Review, v. 45, 2020.'),
+    cand('Private Equity in the Emerging Markets', [], null)).status, null);
+  assert.equal(comparar(ref('LORENZO, Manuela Fortes. Financial technology: essays on the impact of Pix on Brazilian society. 2024. Tese (Doutorado) – Escola Brasileira de Administração Pública da Fundação Getúlio Vargas, Rio de Janeiro, 2024.'),
+    cand('Escola Brasileira de Administração Pública da Fundação Getúlio Vargas', ['Siqueira'], 2010)).status, null);
+  // Ano do volume impresso (2026) e ano online no DOI (2024).
+  assert.equal(comparar(ref('TEBALDI, Raquel; GASSMANN, Franziska. Re-election incentives and early childhood programmes. European Journal of Political Economy, v. 85, 2024.'),
+    cand('Re-election incentives and early childhood programmes', ['Tebaldi', 'Gassmann'], 2026, { anos: [2026, 2024] })).status, 'verificada');
+});
