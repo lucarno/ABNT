@@ -84,3 +84,38 @@ test('legislação não é consultada', async () => {
   assert.equal(v.status, 'nao_aplicavel');
   assert.equal(f.chamadas.length, 0);
 });
+
+// Casos reais dos TCCs auditados (registros como vieram da Crossref).
+test('casos reais: obras diferentes, autoria trocada, resenha, coautores e edição', async () => {
+  const { comparar } = await import('../src/verificacao.js');
+  const cand = (titulo, sobrenomes, ano, livro = false) => ({ titulo, sobrenomes, ano, livro, base: 'Crossref' });
+  const status = (texto, c) => comparar(ref(texto), c).status;
+
+  // Mesmo título principal, subtítulos diferentes: obras diferentes.
+  assert.equal(status('BBVA SPARK. Financial inclusion in Latin America: Fintech entrepreneurship to drive financial inclusion in Latin America. Madrid: BBVA, 2024.',
+    cand('Financial Inclusion in Latin America: Facts and Obstacles', ['Rojas-Suarez'], 2016)), null);
+  // Título parecido, outra obra: não acusa autoria trocada.
+  assert.equal(status('COSTA, Duilio. Fatores que influenciam o spread das debêntures no Brasil. 2009. Dissertação (Mestrado) – FGV, São Paulo, 2009.',
+    cand('Fatores que influenciam o spread em emissão primária de debêntures no Brasil', ['Neves da Silva'], 2021)), null);
+  // Título idêntico com outra autoria: sinal de referência inventada.
+  const trocada = comparar(ref('KRISTOFFERSSON, J.; BÖRJESSON, M. Building acceptance for congestion charges – The Swedish experiences compared. Transport Policy, v. 49, p. 20–29, 2016.'),
+    cand('Building acceptance for congestion charges – the Swedish experiences compared', ['Hysing', 'Isaksson'], 2015));
+  assert.equal(trocada.status, 'divergente');
+  assert.match(trocada.notas[0], /outra autoria/);
+  // Resenha do livro confirma a obra.
+  assert.equal(status('SUTTON, R. S.; BARTO, A. G. Reinforcement Learning: An Introduction. 2. ed. Cambridge, MA: MIT Press, 2018.',
+    cand('Reinforcement Learning: An Introduction; R.S. Sutton, A.G. Barto (Eds.); MIT Press, Cambridge, MA, 1998, 380 pages', ['Rao'], 2000)), 'verificada');
+  // Primeiro autor certo, coautores inventados.
+  const coautores = comparar(ref('NAKAMURA, Felipe; BARBOSA, Lucas; MARTINS, André. The new era of Brazilian football and clubs managed as a business. Revista X, v. 1, n. 1, 2021.'),
+    cand('The New Era of Brazilian Football and Clubs Managed as a Business', ['Nakamura', 'Cerqueira'], 2021));
+  assert.equal(coautores.status, 'divergente');
+  assert.match(coautores.notas[0], /coautores/);
+  // Livro em outra edição: verificado, com aviso.
+  const edicao = comparar(ref('GILLIGAN, John; WRIGHT, Mike. Private Equity Demystified: An Explanatory Guide. 3. ed. Londres: ICAEW, 2014.'),
+    cand('Private Equity Demystified: An Explanatory Guide', ['Gilligan', 'Wright'], 2020, true));
+  assert.equal(edicao.status, 'verificada');
+  assert.match(edicao.notas[0], /outra edição/);
+  // Referência institucional casada com artigo que só cita a instituição: não verifica.
+  assert.equal(status('CET – Companhia de Engenharia de Tráfego. Relatórios Anuais de Mobilidade. São Paulo, diversas edições.',
+    cand('Estratégia e estrutura em empresas de mobilidade urbana: o caso da Companhia de Engenharia de Tráfego', ['Silva'], 2015)), null);
+});

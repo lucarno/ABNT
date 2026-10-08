@@ -35,11 +35,14 @@ async function obterJson(fetchFn, url, tentativas = 4) {
 const limpar = (s) => (s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 
 function deCrossref(it) {
-  const ano = (it.issued || it.published || it['published-print'] || {})['date-parts']?.[0]?.[0] ?? null;
+  // Ano: a data mais antiga entre as registradas (publicação online costuma vir antes da impressa).
+  const anos = ['issued', 'published', 'published-online', 'published-print']
+    .map((k) => it[k]?.['date-parts']?.[0]?.[0]).filter((a) => Number.isInteger(a));
   return {
     titulo: limpar([...(it.title || []), ...(it.subtitle || [])].join(': ')),
     sobrenomes: (it.author || []).map((a) => a.family || a.name || ''),
-    ano,
+    ano: anos.length ? Math.min(...anos) : null,
+    livro: /book|monograph/.test(it.type || ''),
     doi: it.DOI,
     url: `https://doi.org/${it.DOI}`,
     base: 'Crossref',
@@ -52,6 +55,7 @@ function deDatacite(d) {
     titulo: limpar(a.titles?.[0]?.title),
     sobrenomes: (a.creators || []).map((c) => c.familyName || c.name || ''),
     ano: a.publicationYear ?? null,
+    livro: /book/i.test(a.types?.resourceTypeGeneral || ''),
     doi: a.doi,
     url: `https://doi.org/${a.doi}`,
     base: 'DataCite',
@@ -65,28 +69,61 @@ function contido(a, b) {
   return ta.length ? ta.filter((t) => tb.has(t)).length / ta.length : 0;
 }
 
+// Sobrenomes da referência, na ordem: "SILVA, João; SOUZA, M." -> ["silva", "souza"].
+function autoresDaRef(ref) {
+  if (ref.institucional) return [];
+  if (!ref.entrada) return ref.autorTokens.length ? [ref.autorTokens.join(' ')] : [];
+  return ref.entrada.split(';').map((a) => normalizar(a.split(',')[0])).filter((a) => a && !/^et al/.test(a));
+}
+
+const PARTICULAS = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'van', 'von', 'der', 'del', 'la', 'le', 'y', 'junior', 'jr', 'filho', 'neto']);
+
+function mesmoSobrenome(a, b) {
+  if (a.replace(/ /g, '') === b.replace(/ /g, '')) return true;
+  const ta = a.split(' ').filter((t) => t.length > 1 && !PARTICULAS.has(t));
+  const tb = new Set(b.split(' ').filter((t) => t.length > 1 && !PARTICULAS.has(t)));
+  return ta.some((t) => tb.has(t));
+}
+
 export function comparar(ref, cand) {
   const tituloRef = ref.titulo || ref.texto;
-  const sim = similaridadeTitulo(tituloRef, cand.titulo);
-  const sobrenomes = new Set(cand.sobrenomes.flatMap((s) => normalizar(s).split(' ')));
-  const autorOk = ref.institucional || !ref.autorTokens.length ? null : ref.autorTokens.some((t) => sobrenomes.has(t));
+  // Título do registro contido no texto da referência (pega subtítulos que a heurística cortou).
+  const noTexto = tokens(cand.titulo).length >= 4 ? contido(cand.titulo, ref.texto) : 0;
+  const sim = Math.max(similaridadeTitulo(tituloRef, cand.titulo), noTexto);
+
+  const autores = autoresDaRef(ref);
+  const doRegistro = cand.sobrenomes.map(normalizar).filter(Boolean);
+  const achados = autores.map((a) => doRegistro.some((c) => mesmoSobrenome(a, c)));
+  const autorOk = !autores.length || !doRegistro.length ? null : achados.some(Boolean);
+  // Coautores: com dois ou mais autores dos dois lados, ao menos um coautor deve aparecer.
+  const coautoresOk = autorOk && autores.length >= 2 && doRegistro.length >= 2 ? achados.slice(1).some(Boolean) || !achados[0] : null;
   const anoOk = cand.ano && ref.anos.length ? ref.anos.some((a) => Math.abs(a - cand.ano) <= 1) : null;
+  const livro = cand.livro || ['livro', 'capitulo'].includes(ref.tipo);
   // Resenha publicada da obra: o título do registro contém o título e o autor da referência.
-  const resenha = sim < 0.75 && ref.titulo && contido(ref.titulo, cand.titulo) >= 0.9
-    && ref.autorTokens.some((t) => tokens(cand.titulo).includes(t));
+  const resenha = ref.titulo && contido(ref.titulo, cand.titulo) >= 0.9 && autores.some((a) => tokens(cand.titulo).some((t) => mesmoSobrenome(a, t)));
 
   let status = null;
   const notas = [];
-  if (sim >= 0.75 && autorOk !== false && anoOk !== false) status = 'verificada';
-  else if (resenha) {
+  const registro = cand.sobrenomes.slice(0, 4).join(', ') || '—';
+  if (sim >= 0.85 && autorOk === true && coautoresOk !== false && (anoOk !== false || livro)) {
+    status = 'verificada';
+    if (anoOk === false) notas.push(`Localizada na ${cand.base} em outra edição ou ano (${cand.ano}).`);
+  } else if (sim >= 0.95 && autorOk === null && anoOk !== false) {
+    status = 'verificada';
+  } else if (resenha && autorOk !== true) {
     status = 'verificada';
     notas.push(`Existência confirmada por resenha publicada da obra (${cand.base}).`);
-  } else if (sim >= 0.75) {
+  } else if (sim >= 0.92 && autorOk === false) {
     status = 'divergente';
-    if (autorOk === false) notas.push(`autoria não confere (registro: ${cand.sobrenomes.slice(0, 3).join(', ') || '—'})`);
-    if (anoOk === false) notas.push(`ano diverge (registro: ${cand.ano})`);
+    notas.push(`existe obra com este título, mas de outra autoria (registro: ${registro})`);
+  } else if (sim >= 0.85 && autorOk === true && coautoresOk === false) {
+    status = 'divergente';
+    notas.push(`os coautores não conferem (registro: ${registro})`);
+  } else if (sim >= 0.85 && autorOk === true && anoOk === false) {
+    status = 'divergente';
+    notas.push(`o ano diverge (registro: ${cand.ano})`);
   }
-  return { status, sim, cand, notas };
+  return { status, sim, cand, notas, autorOk };
 }
 
 const ORDEM = { verificada: 2, divergente: 1 };
@@ -101,7 +138,7 @@ function descrever(c) {
 
 async function buscaBibliografica(ref, fetchFn) {
   const consulta = ref.texto.replace(/Dispon[íi]vel\s+em:?.*$/i, '').replace(/https?:\/\/\S+/g, '').replace(/\bDOI:?\s*\S+/gi, '').slice(0, 300);
-  const url = `${CROSSREF}/works?rows=5&select=DOI,title,subtitle,author,issued,published,type&query.bibliographic=${encodeURIComponent(consulta)}`;
+  const url = `${CROSSREF}/works?rows=5&select=DOI,title,subtitle,author,issued,published,published-online,published-print,type&query.bibliographic=${encodeURIComponent(consulta)}`;
   const dados = await obterJson(fetchFn, url);
   return melhor((dados?.message?.items || []).map((it) => comparar(ref, deCrossref(it))));
 }
@@ -115,9 +152,11 @@ export async function verificarReferencia(ref, { fetch: fetchFn = globalThis.fet
       const cand = cr ? deCrossref(cr.message) : dc ? deDatacite(dc) : null;
       const c = cand ? comparar(ref, cand) : null;
       if (c?.status) return resultado(c.status, { encontrado: cand, nota: descrever(c) });
+      // DOI do mesmo autor com título um pouco diferente: o DOI identifica a obra.
+      if (c && c.autorOk && c.sim >= 0.6) return resultado('verificada', { encontrado: cand, nota: `Localizada na ${cand.base} pelo DOI; o título no registro é “${cand.titulo}”.` });
       // DOI inexistente ou de outra obra: pode ser só erro de digitação; procura a obra.
       const obra = await buscaBibliografica(ref, fetchFn);
-      if (obra?.status === 'verificada' && obra.cand.doi) {
+      if (obra?.status === 'verificada' && obra.cand.doi && obra.cand.doi.toLowerCase() !== ref.doi.toLowerCase()) {
         return resultado('doi_incorreto', { encontrado: obra.cand, nota: `A obra existe, mas o DOI informado (${ref.doi}) ${cand ? 'é de outra obra' : 'não existe'}. O DOI correto parece ser ${obra.cand.doi}.` });
       }
       if (!cand) {

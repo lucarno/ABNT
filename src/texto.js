@@ -30,17 +30,28 @@ function levenshtein(a, b) {
   return ant[b.length];
 }
 
-// Similaridade de títulos entre 0 e 1: termos em comum no título inteiro, ou título principal
-// (antes de ":") praticamente idêntico, já que bases costumam omitir o subtítulo.
-export function similaridadeTitulo(a, b) {
+function sobreposicao(a, b, porMenor = false) {
   const tx = new Set(tokens(a));
   const ty = new Set(tokens(b));
+  if (!tx.size || !ty.size) return 0;
   let comum = 0;
   for (const t of tx) if (ty.has(t)) comum++;
-  const termos = tx.size && ty.size ? comum / Math.max(tx.size, ty.size) : 0;
-  const pa = normalizar((a || '').split(/[:?]/)[0]);
-  const pb = normalizar((b || '').split(/[:?]/)[0]);
-  const principal = pa && pb ? 1 - levenshtein(pa, pb) / Math.max(pa.length, pb.length) : 0;
+  return comum / (porMenor ? Math.min(tx.size, ty.size) : Math.max(tx.size, ty.size));
+}
+
+// Similaridade de títulos entre 0 e 1: termos em comum no título inteiro, ou título principal
+// (antes de ":") praticamente idêntico quando os subtítulos não se contradizem (bases costumam
+// omitir o subtítulo, mas "Financial inclusion in Latin America: facts and obstacles" e
+// "...: fintech entrepreneurship" são obras diferentes).
+export function similaridadeTitulo(a, b) {
+  const [pa, ...ra] = (a || '').split(/[:?]/);
+  const [pb, ...rb] = (b || '').split(/[:?]/);
+  const sa = ra.join(' ').trim();
+  const sb = rb.join(' ').trim();
+  const termos = sobreposicao(a, b);
+  const subtitulosCompativeis = !tokens(sa).length || !tokens(sb).length || sobreposicao(sa, sb, true) >= 0.5;
+  const [na, nb] = [normalizar(pa), normalizar(pb)];
+  const principal = subtitulosCompativeis && na && nb ? 1 - levenshtein(na, nb) / Math.max(na.length, nb.length) : 0;
   return Math.max(termos, principal);
 }
 
