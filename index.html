@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- A página só fala com as bases de referências, a API da Anthropic e o CDN das bibliotecas:
+       um script injetado não consegue enviar a chave do aluno para outro endereço. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://api.crossref.org https://api.datacite.org https://api.anthropic.com https://cdn.jsdelivr.net; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <title>Verificador de TCC</title>
+  <meta name="description" content="Confere formatação ABNT, citações e a existência das referências de trabalhos acadêmicos.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@600;700&family=Libre+Franklin:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <div class="faixas" aria-hidden="true"></div>
+  <main>
+    <header class="capa">
+      <div class="quadrados" aria-hidden="true"><span></span><span></span></div>
+      <p class="sobretitulo">Normas ABNT · Manual da Biblioteca Telles</p>
+      <h1>Verificador de TCC</h1>
+      <p class="sub">Confere a formatação, cruza citações e referências e verifica se as referências existem. O arquivo é lido no seu navegador e não é enviado para nenhum servidor; só o texto das referências é consultado em bases bibliográficas (Crossref e DataCite).</p>
+    </header>
+
+    <section>
+      <h2>1. Seu trabalho</h2>
+      <label class="zona" id="zona">
+        <input type="file" id="arquivo" accept=".docx,.pdf">
+        <span id="zona-texto"><strong>Escolha o arquivo</strong> ou arraste aqui (.docx ou .pdf)</span>
+      </label>
+      <p class="nota"><b>Prefira o .docx</b> margens, fontes, espaçamentos e recuos são lidos do próprio arquivo. Em PDF, parte da formatação é estimada pela posição do texto.</p>
+    </section>
+
+    <section>
+      <h2>2. Chave da API da Anthropic <span class="opcional">opcional</span></h2>
+      <input type="password" id="chave" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" aria-label="Chave da API da Anthropic">
+      <label class="check"><input type="checkbox" id="lembrar"> Lembrar neste navegador</label>
+      <p class="nota"><b>Com a chave</b> o Claude revisa a forma de cada referência e procura na web as que não estão na Crossref (livros, documentos nacionais, sites). Só a lista de referências é enviada à Anthropic, direto do seu navegador, e o uso é cobrado na sua conta; o custo estimado aparece no fim. <b>Sem a chave</b> as demais checagens funcionam normalmente.</p>
+    </section>
+
+    <button id="verificar" disabled>Verificar trabalho</button>
+
+    <ol id="etapas" class="etapas" hidden></ol>
+    <p id="erro" class="erro" hidden></p>
+
+    <div id="resultado" hidden>
+      <section>
+        <h2>Resultado</h2>
+        <div id="placar" class="placar"></div>
+        <p id="custo" class="nota"></p>
+        <button id="imprimir" class="secundario">Imprimir / salvar PDF</button>
+      </section>
+
+      <section>
+        <h2>Formatação, estrutura e citações</h2>
+        <div id="achados"></div>
+      </section>
+
+      <section>
+        <h2>Referências</h2>
+        <p class="nota-amarela"><b>Atenção</b> “Não localizada” não significa “inventada”: muitas obras nacionais não estão em bases abertas. Já um DOI inexistente, um DOI de outra obra ou uma referência que nem a busca na web encontra merecem conferência imediata.</p>
+        <div id="referencias"></div>
+      </section>
+    </div>
+
+    <footer>
+      Regras: <em>Manual para Elaboração de Trabalhos Baseado na ABNT</em> (Biblioteca Telles, v5), NBR 6023:2018, 6028:2021, 10520:2023 e 14724:2011. Esta ferramenta é um apoio; a conferência final cabe ao aluno e ao orientador.
+    </footer>
+  </main>
+</body>
+</html>
