@@ -77,3 +77,39 @@ test('similaridade de títulos: subtítulo omitido conta, palavras parecidas em 
   assert.ok(similaridadeTitulo('Why nations fail: the origins of power, prosperity, and poverty', 'Why Nations Fail') >= 0.75);
   assert.ok(similaridadeTitulo('Instituições e crescimento no Brasil contemporâneo', 'Crescimento econômico e instituições no Brasil: o esforço para reformar leis') < 0.75);
 });
+
+// Casos tirados de TCCs reais do repositório do Insper.
+test('casos reais: nomes curtos, grafias com espaço e falsas citações', () => {
+  const refs = [
+    'B3. Histórico de cotações. São Paulo, 2024.',
+    'LI, Z.; HENSHER, D. A. Congestion charging and car use. Transport Reviews, v. 32, n. 3, p. 2-28, 2012.',
+    'MAC KINLAY, A. Craig. Event studies in economics and finance. Journal of Economic Literature, v. 35, n. 1, p. 13-39, 1997.',
+  ].map((t, k) => ({ n: k + 1, ...analisarReferencia(t) }));
+  const texto = 'Dados da bolsa (B3, 2024). Conforme Li e Hensher (2012), há efeito (MacKinlay, 1997). '
+    + 'A norma (Res. 4.657/2018) e a série (BM, série 1788) não são citações, nem o Tratado EUA–Japão (1951).';
+  const cs = extrairCitacoes(texto);
+  const { semReferencia, naoCitadas } = cruzar(cs, refs);
+  assert.deepEqual(naoCitadas, []);
+  assert.deepEqual(semReferencia.map((c) => `${c.autor}|${c.tipo}`), ['Japão|narrativa']);
+});
+
+test('anos ignoram ISSN, páginas e links', () => {
+  const r = analisarReferencia('ASHWORTH, Scott. Electoral accountability. Annual Review of Political Science, v. 15, p. 1791-1823, 2012. ISSN 1545-1577. Disponível em: https://x.org/2019/a. Acesso em: 3 mar. 2025.');
+  assert.deepEqual(r.anos, [2012]);
+});
+
+test('legislação só quando a jurisdição abre a referência', () => {
+  assert.equal(analisarReferencia('ALENCAR, R. A governança no futebol: uma análise da Lei da SAF. São Paulo: Insper, 2025.').tipo === 'legislacao', false);
+  assert.equal(analisarReferencia('SÃO PAULO (Estado). Decreto nº 64.000, de 1 de janeiro de 2019. Dispõe sobre algo. São Paulo, 2019.').tipo, 'legislacao');
+});
+
+test('sistema numérico: lista [n] e chamadas [n], [2-4]', async () => {
+  const { extrairReferencias, listaNumerada, extrairCitacoesNumericas, cruzarNumerico } = await import('../src/referencias.js');
+  const refs = extrairReferencias(['[1] SMITH, J. A. São Paulo: X, 2020.', '[2] DOE, J. B. Rio: Y, 2019.', '[3] ROE, K. C. Rio: Z, 2018.', '[4] POE, E. D. Rio: W, 2017.'].map((texto) => ({ texto })), 'docx');
+  assert.ok(listaNumerada(refs));
+  assert.equal(refs[0].autor, 'SMITH');
+  const nums = extrairCitacoesNumericas('Como em [1] e [2-3], e também [7].');
+  const { semReferencia, naoCitadas } = cruzarNumerico(nums, refs);
+  assert.deepEqual(semReferencia.map((c) => c.autor), ['[7]']);
+  assert.deepEqual(naoCitadas.map((r) => r.numero), [4]);
+});

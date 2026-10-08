@@ -49,10 +49,10 @@ export function contarPalavras(s) {
   return m ? m.length : 0;
 }
 
-// Título de seção normalizado, sem numeração progressiva ("1 INTRODUÇÃO" -> "INTRODUÇÃO").
+// Título de seção normalizado, sem numeração progressiva ("1 INTRODUÇÃO", "5.Conclusão").
 export function tituloSecao(texto) {
   return (texto || '')
-    .replace(/^\s*\d+(\.\d+)*\.?\s+/, '')
+    .replace(/^\s*\d+(\.\d+)*(\.?\s+|\.(?=\p{L}))/u, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();

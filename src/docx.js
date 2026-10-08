@@ -27,6 +27,10 @@ function lerPPr(pPr) {
     left: num(attr(ind, 'left') ?? attr(ind, 'start')),
     firstLine: num(attr(ind, 'firstLine') ?? (attr(ind, 'hanging') !== undefined ? -num(attr(ind, 'hanging')) : undefined)),
     jc: attr(filho(pPr, 'jc'), 'val'),
+    // Item de lista automática (numId 0 desliga a lista herdada do estilo).
+    lista: filho(pPr, 'numPr') ? attr(filho(filho(pPr, 'numPr'), 'numId'), 'val') !== '0' : undefined,
+    // "Não adicionar espaço entre parágrafos do mesmo estilo".
+    contextual: filho(pPr, 'contextualSpacing') ? !['0', 'false'].includes(attr(filho(pPr, 'contextualSpacing'), 'val')) : undefined,
   };
 }
 
@@ -172,8 +176,9 @@ function lerParagrafo(p, ctx) {
     recuoEsqCm: (pp.left || 0) / TWIP_CM,
     recuoPrimeiraCm: (pp.firstLine || 0) / TWIP_CM,
     alinhamento: ALINHAMENTO[pp.jc] || 'esquerda',
-    espacoAntesPt: (pp.before || 0) / 20,
-    espacoDepoisPt: (pp.after || 0) / 20,
+    espacoAntesPt: pp.contextual ? 0 : (pp.before || 0) / 20,
+    espacoDepoisPt: pp.contextual ? 0 : (pp.after || 0) / 20,
+    emLista: !!pp.lista,
     emTabela: temAncestral(p, ['tbl']),
   };
 }

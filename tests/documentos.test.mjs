@@ -49,13 +49,14 @@ const ESPERADOS_DOCX = [
   'erro:Citações longas:Tamanho 10',
   'erro:Ilustrações e tabelas:Indicação de “Fonte:”',
   'alerta:Texto:Títulos sem número centralizados',
-  'erro:Resumo:Extensão',
+  'alerta:Resumo:Extensão',
   'alerta:Resumo:Palavras-chave',
   'erro:Citações:Toda citação tem referência',
   'alerta:Citações:Toda referência é citada',
   'alerta:Citações:Autor em maiúsculas e minúsculas',
   'erro:Referências:Ordem alfabética',
-  'erro:Referências:Documentos online',
+  'erro:Referências:Documentos online: “Disponível em:”',
+  'erro:Referências:Documentos online: “Acesso em:”',
   'erro:Referências:Alinhadas à esquerda',
   'alerta:Referências:Uma linha em branco entre referências',
 ];
@@ -76,9 +77,9 @@ test('TCC com problemas (.pdf): aponta o que é mensurável em PDF', async () =>
     'erro:Página:Numeração de páginas',
     'erro:Texto:Tamanho 12 no texto',
     'erro:Texto:Fonte (Arial ou Times New Roman)',
-    'erro:Resumo:Extensão',
+    'alerta:Resumo:Extensão',
     'erro:Citações:Toda citação tem referência',
-    'erro:Referências:Documentos online',
+    'erro:Referências:Documentos online: “Acesso em:”',
   ]) assert.ok(p.includes(esperado), `faltou ${esperado}`);
   assert.equal(r.refs.length, 4);
 });

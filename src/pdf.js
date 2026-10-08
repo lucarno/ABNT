@@ -18,8 +18,11 @@ async function nomesDasFontes(pagina, conteudo) {
   return nomes;
 }
 
-export async function lerPdf(buffer, pdfjs) {
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false }).promise;
+// Ligaduras ("ﬁ") e acentos compostos (LaTeX gera "ı́" para "í") viram caracteres simples.
+const normalizarTexto = (s) => s.replace(/ı(?=[\u0300-\u036f])/g, 'i').normalize('NFKC');
+
+export async function lerPdf(buffer, pdfjs, opcoes = {}) {
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false, ...opcoes }).promise;
   const paginas = [];
   const paragrafos = [];
 
@@ -54,7 +57,7 @@ export async function lerPdf(buffer, pdfjs) {
       }
       const maior = l.itens.reduce((a, b) => (b.str.length > a.str.length ? b : a));
       return {
-        texto: texto.replace(/\s+/g, ' ').trim(),
+        texto: normalizarTexto(texto).replace(/\s+/g, ' ').trim(),
         pagina: n,
         x: Math.min(...l.itens.map((i) => i.x)),
         fim: Math.max(...l.itens.map((i) => i.fim)),

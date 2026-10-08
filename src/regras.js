@@ -20,7 +20,7 @@ export const REGRAS = {
   // Recomendado: recuo de 4 cm para citação direta longa.
   recuoCitacaoLongaCm: 4.0,
 
-  // Resumo: parágrafo único, justificado, sem tabulação; 150 a 500 palavras; 3 a 5 palavras-chave.
+  // Resumo: parágrafo único, justificado, sem tabulação; recomendam-se 150 a 500 palavras e 3 a 5 palavras-chave.
   resumo: { palavrasMin: 150, palavrasMax: 500, palavrasChaveMin: 3, palavrasChaveMax: 5 },
 
   // Fração mínima de parágrafos conformes para "ok" e para "alerta" (abaixo disso, "erro").
@@ -35,7 +35,7 @@ export const REGRAS = {
     { id: 'sumario', nome: 'Sumário', titulos: ['SUMÁRIO'], obrigatorio: true },
     { id: 'introducao', nome: 'Introdução', titulos: ['INTRODUÇÃO'], obrigatorio: true },
     { id: 'conclusao', nome: 'Considerações finais', titulos: ['CONSIDERAÇÕES FINAIS', 'CONCLUSÃO', 'CONCLUSÕES'], obrigatorio: true },
-    { id: 'referencias', nome: 'Referências', titulos: ['REFERÊNCIAS', 'REFERÊNCIAS BIBLIOGRÁFICAS'], obrigatorio: true },
+    { id: 'referencias', nome: 'Referências', titulos: ['REFERÊNCIAS', 'REFERÊNCIAS BIBLIOGRÁFICAS', 'BIBLIOGRAFIA'], obrigatorio: true },
   ],
 
   // Títulos sem indicativo numérico: devem ser centralizados.
