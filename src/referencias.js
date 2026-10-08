@@ -8,16 +8,23 @@ function anos(texto) {
   return [...new Set([...texto.matchAll(ANO)].map((m) => Number(m[1])))];
 }
 
-// Fim do bloco de autoria: primeiro ". " que não seja de uma inicial ("J. P."), de "et al."
-// ou seguido de "(org.)"/"(ed.)".
+// Fim do bloco de autoria: primeiro ". " que não seja de uma inicial ("J. P."), nem seguido
+// de "et al." ou de "(org.)"/"(ed.)".
 function fimAutoria(texto) {
   const re = /\.\s+/g;
   let m;
   while ((m = re.exec(texto))) {
     const antes = texto.slice(0, m.index).match(/(\S+)$/)?.[1] || '';
     const depois = texto.slice(m.index + m[0].length);
-    if (/^[\p{Lu}](-[\p{Lu}])?$/u.test(antes) && /^(\p{Lu}\.|\()/u.test(depois)) continue;
-    if (/^al$/i.test(antes)) continue;
+    if (/^[\p{Lu}](-[\p{Lu}])?$/u.test(antes)) {
+      if (/^(\p{Lu}\.|\()/u.test(depois)) continue;
+      // "PETER, J. Paul. Marketing: criando valor": depois da inicial vem mais um nome se o
+      // trecho seguinte só tem palavras com maiúscula e o próximo já parece um título.
+      const [seg1, seg2 = ''] = depois.split(/\.\s+/);
+      const soNome = /^(\p{Lu}[\p{L}'’\-]*|de|da|do|dos|das)( (\p{Lu}[\p{L}'’\-]*|de|da|do|dos|das)){0,2}$/u.test(seg1);
+      if (soNome && /\s\p{Ll}{3,}/u.test(seg2)) continue;
+    }
+    if (/^et\s+al\./i.test(depois)) continue; // "FRITZ, Susan. et al. Título"
     if (/^\(/.test(depois) && /^\([^)]{1,12}\)\./.test(depois)) continue;
     return m.index + 1;
   }
@@ -56,6 +63,8 @@ export function analisarReferencia(texto, anterior) {
 
   return {
     texto,
+    // Entrada usada na ordenação alfabética; nula quando o autor foi substituído por traço.
+    entrada: repetido ? null : bloco,
     autor,
     autorTokens: normalizar(autor).split(' ').filter(Boolean),
     institucional: !repetido && !texto.split('.')[0].includes(','),
@@ -147,11 +156,16 @@ function citacoesParenteticas(texto) {
 const NOME = "[\\p{Lu}][\\p{L}'’\\-]+";
 const NARRATIVA = new RegExp(`((?:${NOME}[ ,]+(?:e +|and +|& +)?){0,3}${NOME})(?: +et +al\\.?)? *\\(((?:1[5-9]|20)\\d{2})[a-z]?(?:[,;][^)]*)?\\)`, 'gu');
 
+const INICIO_FRASE = new Set(('segundo conforme para como em de na no nas nos assim tambem ja ainda porem contudo logo portanto '
+  + 'ademais alem desse dessa nesse nessa neste nesta este esta esse essa os as o a um uma por pelo pela mas e enquanto').split(' '));
+
 function citacoesNarrativas(texto) {
   const out = [];
   for (const m of texto.matchAll(NARRATIVA)) {
-    // Remove título em caixa alta colado à frase ("INTRODUÇÃO Segundo Silva").
-    const autor = m[1].replace(/[ ,]+$/, '').replace(/^(?:[\p{Lu}]{2,} +)+(?=\p{Lu}\p{Ll})/u, '');
+    // Remove título em caixa alta e palavras de início de frase ("INTRODUÇÃO Segundo Silva").
+    const palavras = m[1].replace(/[ ,]+$/, '').replace(/^(?:[\p{Lu}]{2,} +)+(?=\p{Lu}\p{Ll})/u, '').split(' ');
+    while (palavras.length > 1 && INICIO_FRASE.has(normalizar(palavras[0]))) palavras.shift();
+    const autor = palavras.join(' ');
     if (autorValido(autor.split(/[ ,]+/).pop())) out.push({ autor, ano: Number(m[2]), trecho: m[0] });
   }
   return out;

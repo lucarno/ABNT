@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verificador de TCC</title>
+  <meta name="description" content="Confere formatação ABNT, citações e a existência das referências de trabalhos acadêmicos.">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Verificador de TCC</h1>
+      <p class="sub">Confere a formatação pelas normas ABNT do manual da Biblioteca Telles, cruza citações e referências e verifica se as referências existem. O arquivo é lido no seu navegador; ele não é enviado para nenhum servidor.</p>
+    </header>
+
+    <section class="cartao">
+      <h2>1. Seu trabalho</h2>
+      <label class="zona" id="zona">
+        <input type="file" id="arquivo" accept=".docx,.pdf">
+        <span id="zona-texto"><strong>Escolha o arquivo</strong> ou arraste aqui (.docx ou .pdf)</span>
+      </label>
+      <p class="nota">Prefira o <strong>.docx</strong>: margens, fontes, espaçamentos e recuos são lidos do próprio arquivo. Em PDF, parte da formatação é estimada pela posição do texto.</p>
+    </section>
+
+    <section class="cartao">
+      <h2>2. Chave da API da Anthropic <span class="opcional">opcional</span></h2>
+      <input type="password" id="chave" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+      <label class="check"><input type="checkbox" id="lembrar"> Lembrar neste navegador</label>
+      <p class="nota">Com a chave, o Claude revisa a forma de cada referência e procura na web as que não estão na Crossref (livros, documentos nacionais, sites). Só a lista de referências é enviada à Anthropic, direto do seu navegador, e o uso é cobrado na sua conta. O custo estimado aparece no fim. Sem chave, as demais checagens funcionam normalmente.</p>
+    </section>
+
+    <button id="verificar" disabled>Verificar trabalho</button>
+
+    <ol id="etapas" class="etapas" hidden></ol>
+    <p id="erro" class="erro" hidden></p>
+
+    <div id="resultado" hidden>
+      <section class="cartao">
+        <div class="titulo-resultado">
+          <h2>Resultado</h2>
+          <button id="imprimir" class="secundario">Imprimir / salvar PDF</button>
+        </div>
+        <div id="placar" class="placar"></div>
+        <p id="custo" class="nota"></p>
+      </section>
+
+      <section class="cartao">
+        <h2>Formatação, estrutura e citações</h2>
+        <div id="achados"></div>
+      </section>
+
+      <section class="cartao">
+        <h2>Referências</h2>
+        <p class="nota">“Não localizada” não significa “inventada”: muitas obras nacionais não estão em bases abertas. Já um DOI inexistente, um DOI de outra obra ou uma referência que nem a busca na web encontra merecem conferência imediata.</p>
+        <div id="referencias"></div>
+      </section>
+    </div>
+
+    <footer>
+      Regras: <em>Manual para Elaboração de Trabalhos Baseado na ABNT</em> (Biblioteca Telles, v5), NBR 6023:2018, 6028:2021, 10520:2023 e 14724:2011. Esta ferramenta é um apoio; a conferência final cabe ao aluno e ao orientador.
+    </footer>
+  </main>
+</body>
+</html>

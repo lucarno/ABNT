@@ -407,11 +407,14 @@ function checarFormaReferencias(doc, secoes, refs, regras) {
   if (secoes.referencias === null) return out;
   if (!refs.length) return [achado('Referências', 'Lista de referências', 'erro', 'A seção existe, mas nenhuma referência foi identificada.')];
 
+  // Compara a entrada (autoria completa ou título); referências com autor em traço são puladas.
   const fora = [];
-  for (let k = 1; k < refs.length; k++) {
-    const a = normalizar(refs[k - 1].autor || refs[k - 1].texto);
-    const b = normalizar(refs[k].autor || refs[k].texto);
-    if (a.localeCompare(b, 'pt', { sensitivity: 'base' }) > 0) fora.push(`#${refs[k].n} ${refs[k].autor} depois de ${refs[k - 1].autor}`);
+  const comEntrada = refs.filter((r) => r.entrada);
+  for (let k = 1; k < comEntrada.length; k++) {
+    const [a, b] = [comEntrada[k - 1], comEntrada[k]];
+    if (normalizar(a.entrada).localeCompare(normalizar(b.entrada), 'pt', { sensitivity: 'base' }) > 0) {
+      fora.push(`#${b.n} (${trecho(b.entrada, 30)}) depois de #${a.n} (${trecho(a.entrada, 30)})`);
+    }
   }
   out.push(fora.length
     ? achado('Referências', 'Ordem alfabética', 'erro', `Fora de ordem: ${fora.slice(0, 5).join('; ')}.`)

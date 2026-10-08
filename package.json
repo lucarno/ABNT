@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/",
-    "serve": "python3 -m http.server 8000"
+    "test": "node --test tests/*.test.mjs",
+    "serve": "python3 -m http.server 8000",
+    "test:e2e": "node --test tests/e2e/*.test.mjs"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@xmldom/xmldom": "0.9.12",
     "jszip": "3.10.1",
     "pdfjs-dist": "4.10.38",
