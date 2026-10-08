@@ -10,10 +10,12 @@ export function criarCliente(Anthropic, apiKey, opcoes = {}) {
 const FALLBACK = { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' };
 
 // Envia a requisição; se a API recusar os parâmetros de fallback (400), repete sem eles.
-// Retoma turnos pausados pela busca na web (pause_turn).
+// Retoma turnos pausados pela busca na web (pause_turn) e devolve a última resposta junto com
+// todos os blocos produzidos nas rodadas.
 async function enviar(cliente, Anthropic, params, uso) {
   let mensagens = params.messages;
   let extra = FALLBACK;
+  const blocos = [];
   for (let rodada = 0; rodada < 4; rodada++) {
     let resp;
     try {
@@ -29,13 +31,14 @@ async function enviar(cliente, Anthropic, params, uso) {
     uso.entrada += resp.usage.input_tokens + (resp.usage.cache_read_input_tokens || 0) + (resp.usage.cache_creation_input_tokens || 0);
     uso.saida += resp.usage.output_tokens;
     uso.buscas += resp.usage.server_tool_use?.web_search_requests || 0;
+    blocos.push(...resp.content);
     if (resp.stop_reason === 'refusal') throw new Error('O modelo recusou a solicitação.');
     if (resp.stop_reason === 'pause_turn') {
       mensagens = [...mensagens, { role: 'assistant', content: resp.content }];
       continue;
     }
     if (resp.stop_reason === 'max_tokens') throw new Error('Resposta cortada por limite de tamanho; tente com menos referências.');
-    return resp;
+    return { resp, blocos, mensagens };
   }
   throw new Error('A busca não terminou após várias rodadas.');
 }
@@ -103,7 +106,7 @@ export async function revisarReferencias(cliente, Anthropic, refs, { uso, aoProg
   const grupos = lotes(refs, CLAUDE.refsPorLoteRevisao);
   let feitos = 0;
   await Promise.all(grupos.map(async (g) => {
-    const resp = await enviar(cliente, Anthropic, {
+    const { resp } = await enviar(cliente, Anthropic, {
       model: CLAUDE.modelo,
       max_tokens: CLAUDE.maxTokens,
       output_config: { effort: CLAUDE.esforco, format: { type: 'json_schema', schema: ESQUEMA_REVISAO } },
@@ -126,7 +129,9 @@ Para cada referência numerada, pesquise na web (catálogos de editoras, Google 
 - "divergente": existe obra parecida, mas autoria, título ou ano não conferem. Diga o que diverge.
 - "nao_encontrada": nenhuma evidência após buscas razoáveis. Isso é um sinal de que a referência pode ter sido inventada ou copiada com erro.
 
-Em "evidencia_url", copie exatamente a URL de um resultado de busca que sustenta a classificação; deixe vazia quando não houver. Use somente URLs que apareceram nos resultados das suas buscas. Em "titulo_encontrado", copie o título como aparece na fonte. Em "observacao", explique em uma frase curta, em português.`;
+Em "evidencia_url", copie exatamente a URL de um resultado de busca que sustenta a classificação; deixe vazia quando não houver. Use somente URLs que apareceram nos resultados das suas buscas. Em "titulo_encontrado", copie o título como aparece na fonte. Em "observacao", explique em uma frase curta, em português.
+
+Quando terminar as buscas, registre a classificação de todas as referências numa única chamada à ferramenta registrar_resultados.`;
 
 const ESQUEMA_BUSCA = {
   type: 'object',
@@ -151,33 +156,65 @@ const ESQUEMA_BUSCA = {
   additionalProperties: false,
 };
 
+// A busca na web sempre gera citações, que são incompatíveis com output_config.format; por isso
+// o resultado volta por uma ferramenta com esquema estrito. A entrada é pequena, então não há
+// ganho em eager_input_streaming, que desligaria a validação do esquema pela API.
+const FERRAMENTA_RESULTADOS = {
+  name: 'registrar_resultados',
+  description: 'Registra a classificação final de cada referência. Chame uma única vez, depois de terminar as buscas.',
+  strict: true,
+  input_schema: ESQUEMA_BUSCA,
+};
+
+// Forma comparável de uma URL: sem protocolo, "www.", fragmento e barra final.
+const chaveUrl = (u) => {
+  try {
+    const x = new URL(u);
+    return `${x.hostname.replace(/^www\./, '')}${decodeURI(x.pathname).replace(/\/$/, '')}${x.search}`.toLowerCase();
+  } catch {
+    return String(u).toLowerCase();
+  }
+};
+
 // URLs que de fato vieram nos resultados da busca (para conferir a evidência citada).
-function urlsDaBusca(resp) {
+function urlsDaBusca(blocos) {
   const urls = new Set();
-  for (const b of resp.content) {
-    if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) for (const r of b.content) if (r.url) urls.add(r.url);
+  for (const b of blocos) {
+    if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) for (const r of b.content) if (r.url) urls.add(chaveUrl(r.url));
   }
   return urls;
 }
+
+const chamadaResultados = (blocos) => blocos.find((b) => b.type === 'tool_use' && b.name === FERRAMENTA_RESULTADOS.name);
 
 export async function buscarNaWeb(cliente, Anthropic, refs, { uso, aoProgredir } = {}) {
   const out = new Map();
   let feitos = 0;
   const grupos = lotes(refs, CLAUDE.refsPorLoteBusca);
-  // Até três lotes em paralelo para não estourar o limite de requisições da chave.
-  for (const fatia of lotes(grupos, 3)) {
+  // Dois lotes por vez, para não estourar o limite de requisições de chaves novas.
+  for (const fatia of lotes(grupos, 2)) {
     await Promise.all(fatia.map(async (g) => {
-      const resp = await enviar(cliente, Anthropic, {
+      const params = {
         model: CLAUDE.modelo,
         max_tokens: CLAUDE.maxTokens,
-        output_config: { effort: CLAUDE.esforco, format: { type: 'json_schema', schema: ESQUEMA_BUSCA } },
-        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 * g.length }],
+        output_config: { effort: CLAUDE.esforco },
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 * g.length }, FERRAMENTA_RESULTADOS],
         system: SISTEMA_BUSCA,
         messages: [{ role: 'user', content: `Referências:\n\n${listar(g)}` }],
-      }, uso);
-      const vistas = urlsDaBusca(resp);
-      for (const r of lerJson(resp).resultados) {
-        const comprovada = !r.evidencia_url || vistas.has(r.evidencia_url);
+      };
+      let { blocos, mensagens, resp } = await enviar(cliente, Anthropic, params, uso);
+      let chamada = chamadaResultados(blocos);
+      if (!chamada) {
+        // O modelo terminou sem registrar: pede o registro uma vez.
+        const lembrete = [...mensagens, { role: 'assistant', content: resp.content }, { role: 'user', content: 'Registre agora a classificação de todas as referências com a ferramenta registrar_resultados.' }];
+        const extra = await enviar(cliente, Anthropic, { ...params, messages: lembrete }, uso);
+        blocos = [...blocos, ...extra.blocos];
+        chamada = chamadaResultados(blocos);
+      }
+      if (!chamada) throw new Error('O modelo não registrou o resultado da busca.');
+      const vistas = urlsDaBusca(blocos);
+      for (const r of chamada.input.resultados || []) {
+        const comprovada = !r.evidencia_url || vistas.has(chaveUrl(r.evidencia_url));
         out.set(r.n, comprovada ? r : { ...r, status: 'incerta', observacao: `${r.observacao} (O link indicado não veio dos resultados da busca; confira manualmente.)` });
       }
       feitos += g.length;

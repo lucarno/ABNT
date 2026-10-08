@@ -4,7 +4,7 @@ function sse(eventos) {
   return eventos.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
 }
 
-// blocos: [{ type: 'text', text } | { type: 'web_search', query, urls: [...] }]
+// blocos: [{ type: 'text', text } | { type: 'web_search', query, urls: [...] } | { type: 'tool_use', name, input }]
 export function corpoSse(blocos, { stop_reason = 'end_turn', buscas = 0 } = {}) {
   const ev = [{
     type: 'message_start',
@@ -15,6 +15,10 @@ export function corpoSse(blocos, { stop_reason = 'end_turn', buscas = 0 } = {}) 
     if (b.type === 'text') {
       ev.push({ type: 'content_block_start', index: i, content_block: { type: 'text', text: '' } });
       ev.push({ type: 'content_block_delta', index: i, delta: { type: 'text_delta', text: b.text } });
+      ev.push({ type: 'content_block_stop', index: i++ });
+    } else if (b.type === 'tool_use') {
+      ev.push({ type: 'content_block_start', index: i, content_block: { type: 'tool_use', id: `toolu_${i}`, name: b.name, input: {} } });
+      ev.push({ type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: JSON.stringify(b.input) } });
       ev.push({ type: 'content_block_stop', index: i++ });
     } else {
       const id = `srvtoolu_${i}`;
@@ -43,13 +47,17 @@ export const CABECALHOS = {
 // Números das referências presentes no pedido ("[3] SOBRENOME...").
 export const numerosDoPedido = (corpo) => [...corpo.messages[0].content.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]));
 
+// Resposta da busca: resultados da web e a chamada à ferramenta registrar_resultados.
+export function respostaBusca(resultados, urls) {
+  return corpoSse([{ type: 'web_search', query: 'busca', urls }, { type: 'tool_use', name: 'registrar_resultados', input: { resultados } }], { stop_reason: 'tool_use', buscas: 1 });
+}
+
 // Resposta padrão: revisão sem tools; busca com tools (cada referência "encontrada" com URL vista na busca).
 export function responder(corpo) {
   const ns = numerosDoPedido(corpo);
   if (corpo.tools) {
     const urls = ns.map((n) => `https://exemplo.org/obra-${n}`);
-    const resultados = ns.map((n, k) => ({ n, status: 'encontrada', evidencia_url: urls[k], titulo_encontrado: `Obra ${n}`, observacao: 'Catálogo da editora.' }));
-    return corpoSse([{ type: 'web_search', query: 'busca', urls }, { type: 'text', text: JSON.stringify({ resultados }) }], { buscas: 1 });
+    return respostaBusca(ns.map((n, k) => ({ n, status: 'encontrada', evidencia_url: urls[k], titulo_encontrado: `Obra ${n}`, observacao: 'Catálogo da editora.' })), urls);
   }
   const referencias = ns.map((n) => ({ n, problemas: n === 1 ? ['Falta o local de publicação.'] : [], sugestao: n === 1 ? 'SOBRENOME, Nome. Título. [local]: Editora, 2020.' : '' }));
   return corpoSse([{ type: 'text', text: JSON.stringify({ referencias }) }]);

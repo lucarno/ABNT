@@ -28,9 +28,17 @@ test('DOI inexistente na Crossref e na DataCite', async () => {
 });
 
 test('DOI que pertence a outra obra', async () => {
-  const f = falso([[/works\/10/, json({ message: item('A completely different paper', ['Smith'], 2001) })]]);
+  const f = falso([[/works\/10/, json({ message: item('A completely different paper', ['Smith'], 2001) })], [/query/, json({ message: { items: [] } })]]);
   const v = await verificarReferencia(ref(`${ARTIGO} DOI: 10.1257/aer.91.5.1369.`), { fetch: f });
   assert.equal(v.status, 'doi_divergente');
+});
+
+test('DOI com erro de digitação: a obra existe com outro DOI', async () => {
+  const certo = item('The Colonial Origins of Comparative Development', ['Acemoglu', 'Johnson', 'Robinson'], 2001, '10.1257/aer.91.5.1369');
+  const f = falso([[/works\/10/, json(null, 404)], [/datacite/, json(null, 404)], [/query/, json({ message: { items: [certo] } })]]);
+  const v = await verificarReferencia(ref(`${ARTIGO} DOI: 10.1257/aer.91.5.1396.`), { fetch: f });
+  assert.equal(v.status, 'doi_incorreto');
+  assert.match(v.nota, /10\.1257\/aer\.91\.5\.1369/);
 });
 
 test('DOI registrado na DataCite', async () => {

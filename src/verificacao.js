@@ -8,6 +8,7 @@ const DATACITE = 'https://api.datacite.org';
 export const STATUS = {
   verificada: 'Verificada',
   divergente: 'Encontrada com divergências',
+  doi_incorreto: 'DOI incorreto',
   doi_inexistente: 'DOI inexistente',
   doi_divergente: 'DOI de outra obra',
   nao_localizada: 'Não localizada',
@@ -98,6 +99,13 @@ function descrever(c) {
   return `Registro parecido na ${c.cand.base}, mas ${c.notas.join('; ')}.`;
 }
 
+async function buscaBibliografica(ref, fetchFn) {
+  const consulta = ref.texto.replace(/Dispon[íi]vel\s+em:?.*$/i, '').replace(/https?:\/\/\S+/g, '').replace(/\bDOI:?\s*\S+/gi, '').slice(0, 300);
+  const url = `${CROSSREF}/works?rows=5&select=DOI,title,subtitle,author,issued,published,type&query.bibliographic=${encodeURIComponent(consulta)}`;
+  const dados = await obterJson(fetchFn, url);
+  return melhor((dados?.message?.items || []).map((it) => comparar(ref, deCrossref(it))));
+}
+
 export async function verificarReferencia(ref, { fetch: fetchFn = globalThis.fetch.bind(globalThis) } = {}) {
   try {
     if (ref.doi) {
@@ -105,11 +113,16 @@ export async function verificarReferencia(ref, { fetch: fetchFn = globalThis.fet
       const cr = await obterJson(fetchFn, `${CROSSREF}/works/${doi}`);
       const dc = cr ? null : await obterJson(fetchFn, `${DATACITE}/dois/${doi}`);
       const cand = cr ? deCrossref(cr.message) : dc ? deDatacite(dc) : null;
-      if (!cand) {
-        return resultado('doi_inexistente', { nota: `O DOI ${ref.doi} não existe na Crossref nem na DataCite. É um forte indício de referência incorreta ou inventada.` });
+      const c = cand ? comparar(ref, cand) : null;
+      if (c?.status) return resultado(c.status, { encontrado: cand, nota: descrever(c) });
+      // DOI inexistente ou de outra obra: pode ser só erro de digitação; procura a obra.
+      const obra = await buscaBibliografica(ref, fetchFn);
+      if (obra?.status === 'verificada' && obra.cand.doi) {
+        return resultado('doi_incorreto', { encontrado: obra.cand, nota: `A obra existe, mas o DOI informado (${ref.doi}) ${cand ? 'é de outra obra' : 'não existe'}. O DOI correto parece ser ${obra.cand.doi}.` });
       }
-      const c = comparar(ref, cand);
-      if (c.status) return resultado(c.status, { encontrado: cand, nota: descrever(c) });
+      if (!cand) {
+        return resultado('doi_inexistente', { nota: `O DOI ${ref.doi} não existe na Crossref nem na DataCite, e a obra não foi localizada pelo título. É um forte indício de referência incorreta ou inventada.` });
+      }
       return resultado('doi_divergente', { encontrado: cand, nota: `O DOI existe, mas pertence a outra obra: “${cand.titulo}”${cand.sobrenomes.length ? ` (${cand.sobrenomes.slice(0, 3).join(', ')})` : ''}.` });
     }
 
@@ -117,11 +130,7 @@ export async function verificarReferencia(ref, { fetch: fetchFn = globalThis.fet
       return resultado('nao_aplicavel', { nota: 'Legislação ou norma técnica: confira na fonte oficial.' });
     }
 
-    const consulta = ref.texto.replace(/Dispon[íi]vel em:?.*$/i, '').replace(/https?:\/\/\S+/g, '').slice(0, 300);
-    const url = `${CROSSREF}/works?rows=5&select=DOI,title,subtitle,author,issued,published,type&query.bibliographic=${encodeURIComponent(consulta)}`;
-    const dados = await obterJson(fetchFn, url);
-    const cands = (dados?.message?.items || []).map((it) => comparar(ref, deCrossref(it)));
-    const c = melhor(cands);
+    const c = await buscaBibliografica(ref, fetchFn);
     if (c) return resultado(c.status, { encontrado: c.cand, nota: descrever(c) });
     return resultado('nao_localizada', { nota: 'Não localizada na Crossref (comum em livros, documentos nacionais e páginas da internet).' });
   } catch (e) {

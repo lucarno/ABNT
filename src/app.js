@@ -8,6 +8,7 @@ const CDN = {
   jszip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm',
   pdfjs: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs',
   pdfWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs',
+  pdfFontes: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/standard_fonts/',
   anthropic: 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.128.0/+esm',
 };
 const CHAVE_LOCAL = 'verificador-tcc-chave';
@@ -80,7 +81,7 @@ async function lerArquivo(f) {
   if (/\.pdf$/i.test(f.name)) {
     const pdfjs = await import(CDN.pdfjs);
     pdfjs.GlobalWorkerOptions.workerSrc = CDN.pdfWorker;
-    return lerPdf(buffer, pdfjs);
+    return lerPdf(buffer, pdfjs, { standardFontDataUrl: CDN.pdfFontes });
   }
   const { default: JSZip } = await import(CDN.jszip);
   return lerDocx(buffer, { JSZip, DOMParser });
@@ -123,7 +124,7 @@ async function executar() {
     let falhaIa = '';
     if (chave && analise.refs.length) {
       const { default: Anthropic } = await import(CDN.anthropic);
-      const cliente = criarCliente(Anthropic, chave);
+      const cliente = criarCliente(Anthropic, chave, { maxRetries: 4 });
       const pendentes = analise.refs.filter((r) => ['nao_localizada', 'erro'].includes(verif.get(r.n)?.status));
       const e1 = etapa('Claude revisando a forma das referências…');
       const e2 = pendentes.length ? etapa(`Claude buscando na web ${pendentes.length} referência(s) não localizada(s)…`) : null;
@@ -153,6 +154,7 @@ function situacao(ref, v, w, usouIa) {
   const base = { nota: v?.nota || '', url: v?.encontrado?.url, titulo: v?.encontrado?.titulo };
   switch (v?.status) {
     case 'verificada': return { ...base, nivel: 'ok', rotulo: 'Verificada' };
+    case 'doi_incorreto': return { ...base, nivel: 'alerta', rotulo: 'DOI incorreto' };
     case 'doi_inexistente': return { ...base, nivel: 'erro', rotulo: 'DOI inexistente' };
     case 'doi_divergente': return { ...base, nivel: 'erro', rotulo: 'DOI de outra obra' };
     case 'divergente': return { ...base, nivel: 'alerta', rotulo: 'Divergências' };
